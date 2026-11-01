@@ -1,0 +1,6 @@
+{
+  "name": "Pramanik Bari",
+  "description": "Digital Family Tree & Genealogy Management System with interactive tree visualization, lineage exploration, and Google Sheets & Drive cloud sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
