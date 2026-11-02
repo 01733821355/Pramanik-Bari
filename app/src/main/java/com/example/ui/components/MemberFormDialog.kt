@@ -134,14 +134,30 @@ fun MemberFormDialog(
     var motherMenuExpanded by remember { mutableStateOf(false) }
     var spouseMenuExpanded by remember { mutableStateOf(false) }
 
-    val potentialFathers = remember(allMembers, initialMember.id) {
-        allMembers.filter { it.id != initialMember.id && it.gender == Gender.MALE }
+    // Safe descendant discovery to prevent circular family ties and stack overflows
+    val descendantIds = remember(allMembers, initialMember.id) {
+        val set = mutableSetOf<String>()
+        val queue: java.util.Queue<String> = java.util.LinkedList()
+        queue.add(initialMember.id)
+        while (queue.isNotEmpty()) {
+            val curr = queue.poll()!!
+            for (m in allMembers) {
+                if ((m.fatherId == curr || m.motherId == curr || m.childrenIds.contains(curr)) && set.add(m.id)) {
+                    queue.add(m.id)
+                }
+            }
+        }
+        set
     }
-    val potentialMothers = remember(allMembers, initialMember.id) {
-        allMembers.filter { it.id != initialMember.id && it.gender == Gender.FEMALE }
+
+    val potentialFathers = remember(allMembers, initialMember.id, descendantIds) {
+        allMembers.filter { it.id != initialMember.id && !descendantIds.contains(it.id) && it.gender == Gender.MALE }
     }
-    val potentialSpouses = remember(allMembers, initialMember.id) {
-        allMembers.filter { it.id != initialMember.id }
+    val potentialMothers = remember(allMembers, initialMember.id, descendantIds) {
+        allMembers.filter { it.id != initialMember.id && !descendantIds.contains(it.id) && it.gender == Gender.FEMALE }
+    }
+    val potentialSpouses = remember(allMembers, initialMember.id, descendantIds) {
+        allMembers.filter { it.id != initialMember.id && !descendantIds.contains(it.id) }
     }
 
     Dialog(
@@ -175,7 +191,7 @@ fun MemberFormDialog(
                                     return@Button
                                 }
 
-                                val genInt = generation.toIntOrNull() ?: 1
+                                val genInt = com.example.domain.TreeLayoutCalculator.parseBengaliOrLatinInt(generation)
                                 val updated = initialMember.copy(
                                     fullName = fullName.trim(),
                                     gender = gender,
@@ -412,11 +428,20 @@ fun MemberFormDialog(
                         )
                         for (p in potentialFathers) {
                             DropdownMenuItem(
-                                text = { Text("${p.fullName} (${p.id})") },
+                                text = { Text("${p.fullName} (${p.id}) • Gen ${p.generation}") },
                                 onClick = {
                                     fatherId = p.id
                                     fatherName = p.fullName
                                     generation = (p.generation + 1).toString()
+                                    if (grandfatherName.isBlank() && !p.fatherName.isNullOrBlank()) {
+                                        grandfatherName = p.fatherName
+                                    }
+                                    if (grandmotherName.isBlank() && !p.motherName.isNullOrBlank()) {
+                                        grandmotherName = p.motherName
+                                    }
+                                    if (village.isBlank() && p.village.isNotBlank()) {
+                                        village = p.village
+                                    }
                                     fatherMenuExpanded = false
                                 }
                             )
@@ -454,10 +479,13 @@ fun MemberFormDialog(
                         )
                         for (p in potentialMothers) {
                             DropdownMenuItem(
-                                text = { Text("${p.fullName} (${p.id})") },
+                                text = { Text("${p.fullName} (${p.id}) • Gen ${p.generation}") },
                                 onClick = {
                                     motherId = p.id
                                     motherName = p.fullName
+                                    if (fatherId == null) {
+                                        generation = (p.generation + 1).toString()
+                                    }
                                     motherMenuExpanded = false
                                 }
                             )
@@ -574,8 +602,18 @@ fun MemberFormDialog(
                     OutlinedTextField(
                         value = generation,
                         onValueChange = { generation = it },
-                        label = { Text(FamilyStrings.generation(isBn)) },
-                        modifier = Modifier.weight(1f)
+                        label = { Text(if (isBn) "পুরুষ সংখ্যা (১, ২, ৩...)" else "Purush / Gen (1, 2...)") },
+                        placeholder = { Text(if (isBn) "১ = ১ম পুরুষ, ২ = ২য় পুরুষ" else "1, 2, 3") },
+                        supportingText = {
+                            val parsed = com.example.domain.TreeLayoutCalculator.parseBengaliOrLatinInt(generation)
+                            Text(
+                                text = com.example.domain.TreeLayoutCalculator.toPurushLabel(parsed, isBn),
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 10.sp
+                            )
+                        },
+                        modifier = Modifier.weight(1.3f).testTag("input_generation")
                     )
                 }
 

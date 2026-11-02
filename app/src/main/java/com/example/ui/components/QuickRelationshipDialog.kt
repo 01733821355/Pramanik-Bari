@@ -231,31 +231,56 @@ fun QuickRelationshipDialog(
                         RelTypeRadioItem(
                             label = if (isBn) "${sourceMember.fullName.split(" ").firstOrNull() ?: ""} হলেন পিতা (Father)" else "Set as Father of target",
                             selected = selectedConnectionType == ConnectionType.SET_AS_FATHER,
-                            onClick = { selectedConnectionType = ConnectionType.SET_AS_FATHER }
+                            onClick = {
+                                selectedConnectionType = ConnectionType.SET_AS_FATHER
+                                if (selectedTarget != null) {
+                                    generationInput = maxOf(1, selectedTarget.generation - 1).toString()
+                                }
+                            }
                         )
 
                         RelTypeRadioItem(
                             label = if (isBn) "${sourceMember.fullName.split(" ").firstOrNull() ?: ""} হলেন মাতা (Mother)" else "Set as Mother of target",
                             selected = selectedConnectionType == ConnectionType.SET_AS_MOTHER,
-                            onClick = { selectedConnectionType = ConnectionType.SET_AS_MOTHER }
+                            onClick = {
+                                selectedConnectionType = ConnectionType.SET_AS_MOTHER
+                                if (selectedTarget != null) {
+                                    generationInput = maxOf(1, selectedTarget.generation - 1).toString()
+                                }
+                            }
                         )
 
                         RelTypeRadioItem(
                             label = if (isBn) "স্বামী ও স্ত্রী (Spouses / Couple)" else "Set as Husband & Wife",
                             selected = selectedConnectionType == ConnectionType.SET_AS_SPOUSE,
-                            onClick = { selectedConnectionType = ConnectionType.SET_AS_SPOUSE }
+                            onClick = {
+                                selectedConnectionType = ConnectionType.SET_AS_SPOUSE
+                                if (selectedTarget != null) {
+                                    generationInput = selectedTarget.generation.toString()
+                                }
+                            }
                         )
 
                         RelTypeRadioItem(
                             label = if (isBn) "${sourceMember.fullName.split(" ").firstOrNull() ?: ""} হলেন সন্তান (Child)" else "Set as Child of target",
                             selected = selectedConnectionType == ConnectionType.SET_AS_CHILD,
-                            onClick = { selectedConnectionType = ConnectionType.SET_AS_CHILD }
+                            onClick = {
+                                selectedConnectionType = ConnectionType.SET_AS_CHILD
+                                if (selectedTarget != null) {
+                                    generationInput = (selectedTarget.generation + 1).toString()
+                                }
+                            }
                         )
 
                         RelTypeRadioItem(
                             label = if (isBn) "পরস্পর ভাই-বোন (Siblings)" else "Set as Siblings",
                             selected = selectedConnectionType == ConnectionType.SET_AS_SIBLING,
-                            onClick = { selectedConnectionType = ConnectionType.SET_AS_SIBLING }
+                            onClick = {
+                                selectedConnectionType = ConnectionType.SET_AS_SIBLING
+                                if (selectedTarget != null) {
+                                    generationInput = selectedTarget.generation.toString()
+                                }
+                            }
                         )
                     }
                 }
@@ -264,7 +289,7 @@ fun QuickRelationshipDialog(
 
                 // Custom Generation level tier
                 Text(
-                    text = if (isBn) "প্রজন্মের স্তর পরিবর্তন (বংশলতিকায় অবস্থান):" else "Generation Level (Tier Position):",
+                    text = if (isBn) "পুরুষ সংখ্যা / প্রজন্মের স্তর (বংশলতিকায় অবস্থান):" else "Purush / Generation Tier Position:",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.primary
@@ -273,7 +298,16 @@ fun QuickRelationshipDialog(
                 OutlinedTextField(
                     value = generationInput,
                     onValueChange = { generationInput = it },
-                    label = { Text("Gen (1 = Ancestors, 2, 3...)") },
+                    label = { Text(if (isBn) "পুরুষ সংখ্যা (১ = ১ম পুরুষ, ২ = ২য় পুরুষ...)" else "Purush Level (1, 2, 3...)") },
+                    supportingText = {
+                        val parsed = com.example.domain.TreeLayoutCalculator.parseBengaliOrLatinInt(generationInput)
+                        Text(
+                            text = com.example.domain.TreeLayoutCalculator.toPurushLabel(parsed, isBn),
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 10.sp
+                        )
+                    },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("input_quick_gen")
                 )
@@ -282,7 +316,7 @@ fun QuickRelationshipDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val customGen = generationInput.toIntOrNull()
+                    val customGen = com.example.domain.TreeLayoutCalculator.parseBengaliOrLatinInt(generationInput)
                     if (selectedTargetId != null) {
                         onConnectRelationship(sourceMember.id, selectedTargetId!!, selectedConnectionType, customGen)
                     }

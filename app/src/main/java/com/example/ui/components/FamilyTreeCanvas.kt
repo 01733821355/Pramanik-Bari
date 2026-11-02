@@ -2,9 +2,12 @@ package com.example.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,6 +32,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalIconButton
@@ -50,12 +54,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,27 +69,19 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.example.R
 import com.example.data.model.FamilyMember
 import com.example.data.model.Gender
 import com.example.domain.AgeCalculator
+import com.example.domain.GenerationHeader
 import com.example.domain.TreeLayoutCalculator
 import com.example.domain.TreeNode
 import com.example.ui.localization.FamilyStrings
 import com.example.ui.theme.DeceasedBadgeColor
 import com.example.ui.theme.EmeraldLineColor
-import com.example.ui.theme.FemaleNodeBgDark
-import com.example.ui.theme.FemaleNodeBgLight
 import com.example.ui.theme.FemaleNodeColor
 import com.example.ui.theme.GoldAccent
 import com.example.ui.theme.GoldenLineColor
-import com.example.ui.theme.MaleNodeBgDark
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.material3.Button
-import androidx.compose.ui.res.painterResource
-import com.example.R
-import com.example.ui.theme.MaleNodeBgLight
 import com.example.ui.theme.MaleNodeColor
 import kotlin.math.roundToInt
 
@@ -125,15 +123,15 @@ fun FamilyTreeCanvas(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = if (isBn) "বংশলতিকায় এখনও কোনো সদস্য নেই" else "No Members in Family Tree",
+                    text = if (isBn) "বংশলতিকায় এখনও কোনো সদস্য নেই" else "No Members in Family Tree",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = if (isBn) "নতুন সদস্য যোগ করে প্রোফাইলে বা নোডে লং প্রেস করে পিতা-মাতা, স্বামী-স্ত্রী অথবা ভাই-বোনের সম্পর্ক যুক্ত করুন।"
-                    else "Add family members and long press any node to set parent, spouse, or sibling relationships.",
+                    text = if (isBn) "নতুন সদস্য যোগ করে কার্ডে লং প্রেস (Long Press) করুন এবং পিতা, মাতা বা স্বামী-স্ত্রী নির্বাচন করে বংশলতিকা সাজিয়ে নিন।"
+                    else "Add family members and long press any card to link father, mother, or spouse relationships.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.outline,
                     textAlign = TextAlign.Center,
@@ -187,7 +185,7 @@ fun FamilyTreeCanvas(
                         translationY = panOffsetY
                     )
             ) {
-                // Background Connection Lines
+                // Background Connection Lines and Generation Divider Banners
                 Canvas(
                     modifier = Modifier
                         .size(
@@ -195,14 +193,26 @@ fun FamilyTreeCanvas(
                             height = layoutResult.totalHeight.dp
                         )
                 ) {
-                    val defaultLineColor = Color(0xFF9E9E9E)
+                    val defaultLineColor = Color(0xFFB0BEC5)
+                    val dashedDivider = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
 
-                    // Draw Couple Connection Lines
+                    // Draw Generation Horizontal Guide Lines
+                    for (header in layoutResult.generationHeaders) {
+                        val dividerY = header.y + 14f
+                        drawLine(
+                            color = Color(0xFF2E7D32).copy(alpha = 0.25f),
+                            start = Offset(20f, dividerY),
+                            end = Offset(layoutResult.totalWidth - 40f, dividerY),
+                            strokeWidth = 1.5f,
+                            pathEffect = dashedDivider
+                        )
+                    }
+
+                    // Draw Couple Connection Lines (Double Marriage Line)
                     for (c in layoutResult.coupleLines) {
                         val strokeColor = if (c.isHighlighted) GoldenLineColor else Color(0xFFC5A059)
                         val strokeWidth = if (c.isHighlighted) 4.5f else 2.5f
 
-                        // Dual parallel lines for marriage union bond
                         drawLine(
                             color = strokeColor,
                             start = Offset(c.x1, c.y1 - 2.5f),
@@ -219,14 +229,13 @@ fun FamilyTreeCanvas(
                         )
                     }
 
-                    // Draw Parent to Child Branch Lines
+                    // Draw Parent to Child Branch Lines (Orthogonal Stepped Lines)
                     for (b in layoutResult.branchLines) {
                         val strokeColor = if (b.isHighlighted) EmeraldLineColor else defaultLineColor
-                        val strokeWidth = if (b.isHighlighted) 4f else 2f
+                        val strokeWidth = if (b.isHighlighted) 4f else 2.2f
 
                         val path = Path().apply {
                             moveTo(b.parentMidX, b.parentMidY)
-                            // Stepped orthogonal line: down halfway, horizontal to child, then down to child top
                             val midY = (b.parentMidY + b.childTopY) / 2
                             lineTo(b.parentMidX, midY)
                             lineTo(b.childTopX, midY)
@@ -239,6 +248,17 @@ fun FamilyTreeCanvas(
                             style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                         )
                     }
+                }
+
+                // Render Generation Badges (১ম পুরুষ, ২য় পুরুষ, ৩য় পুরুষ...)
+                for (header in layoutResult.generationHeaders) {
+                    GenerationHeaderBadge(
+                        header = header,
+                        isBn = isBn,
+                        modifier = Modifier.offset {
+                            IntOffset(20.dp.roundToPx(), header.y.dp.roundToPx())
+                        }
+                    )
                 }
 
                 // Node Views
@@ -318,34 +338,46 @@ fun FamilyTreeCanvas(
                 }
 
                 AnimatedVisibility(visible = isSearchExpanded) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    Column(modifier = Modifier.padding(top = 8.dp)) {
                         OutlinedTextField(
                             value = searchNodeQuery,
                             onValueChange = { searchNodeQuery = it },
-                            placeholder = { Text(FamilyStrings.search(isBn), fontSize = 13.sp) },
+                            placeholder = { Text(if (isBn) "বংশলতিকায় সদস্য খুঁজুন..." else "Find in family tree...") },
+                            modifier = Modifier.fillMaxWidth().testTag("tree_search_input"),
                             singleLine = true,
-                            modifier = Modifier.fillMaxWidth().testTag("tree_search_input")
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) }
                         )
+
                         if (searchNodeQuery.isNotBlank()) {
-                            val matches = members.filter { it.fullName.contains(searchNodeQuery, ignoreCase = true) }
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                for (match in matches.take(3)) {
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = MaterialTheme.colorScheme.primaryContainer,
-                                        modifier = Modifier.clickable {
-                                            onMemberSelectHighlight(match)
-                                        }
+                            val matches = members.filter {
+                                it.fullName.contains(searchNodeQuery, ignoreCase = true) ||
+                                        it.id.contains(searchNodeQuery, ignoreCase = true)
+                            }.take(5)
+
+                            Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                                for (m in matches) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                onMemberSelectHighlight(m)
+                                                // Center on this node
+                                                val n = layoutResult.nodes.find { it.member.id == m.id }
+                                                if (n != null) {
+                                                    onTransform(-n.x + 200f, -n.y + 250f, 1.0f)
+                                                }
+                                                searchNodeQuery = ""
+                                                isSearchExpanded = false
+                                            }
+                                            .padding(vertical = 6.dp, horizontal = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
+                                        Text(m.fullName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                                         Text(
-                                            text = match.fullName.split(" ").firstOrNull() ?: match.fullName,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                            TreeLayoutCalculator.toPurushLabel(m.generation, isBn),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary
                                         )
                                     }
                                 }
@@ -354,17 +386,17 @@ fun FamilyTreeCanvas(
                     }
                 }
 
-                // Expand / Collapse Branch Buttons & Quick Relationship Tip
+                // Quick Tree Tips
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "${(zoomScale * 100).toInt()}% • " + if (isBn) "লং-প্রেস: সম্পর্ক" else "Long-press: Relation",
+                        text = if (isBn) "💡 কার্ডে লং প্রেস করে পিতা-মাতা ও স্বামী-স্ত্রী সেট করুন" else "💡 Long-press node to set relations & Purush",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Medium
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.outline
                     )
 
                     Row {
@@ -394,6 +426,47 @@ fun FamilyTreeCanvas(
     }
 }
 
+@Composable
+fun GenerationHeaderBadge(
+    header: GenerationHeader,
+    isBn: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0xFF0F5132),
+        contentColor = Color.White,
+        shadowElevation = 4.dp,
+        modifier = modifier
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = if (isBn) header.titleBn else header.titleEn,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                fontSize = 11.sp,
+                color = Color.White
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Surface(
+                shape = CircleShape,
+                color = GoldAccent,
+                contentColor = Color(0xFF1E293B)
+            ) {
+                Text(
+                    text = "${header.count} ${if (isBn) "জন" else ""}",
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TreeNodeCard(
@@ -418,7 +491,7 @@ fun TreeNodeCard(
         else -> MaterialTheme.colorScheme.outline
     }
 
-    val borderWidth = if (node.isHighlighted || node.isAncestorOfSelected || node.isDescendantOfSelected) 2.5.dp else 1.dp
+    val borderWidth = if (node.isHighlighted || node.isAncestorOfSelected || node.isDescendantOfSelected) 2.5.dp else 1.2.dp
 
     Card(
         modifier = modifier
@@ -439,11 +512,11 @@ fun TreeNodeCard(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(8.dp),
+                .padding(6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            // Top badges (Gen + Age + Deceased)
+            // Top badges (Purush Number + Age + Deceased)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -451,13 +524,14 @@ fun TreeNodeCard(
             ) {
                 Surface(
                     shape = RoundedCornerShape(4.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant
+                    color = Color(0xFF0F5132).copy(alpha = 0.15f)
                 ) {
                     Text(
-                        text = "Gen ${m.generation}",
+                        text = TreeLayoutCalculator.toPurushLabel(node.purushNumber, isBn),
                         style = MaterialTheme.typography.labelSmall,
                         fontSize = 9.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF0F5132),
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                     )
                 }
@@ -497,7 +571,7 @@ fun TreeNodeCard(
             val resolvedUrl = m.getResolvedImageUrl()
             Box(
                 modifier = Modifier
-                    .size(54.dp)
+                    .size(46.dp)
                     .clip(CircleShape)
                     .border(
                         2.dp,
@@ -524,25 +598,45 @@ fun TreeNodeCard(
                             imageVector = Icons.Default.Person,
                             contentDescription = null,
                             tint = if (isMale) MaleNodeColor else FemaleNodeColor,
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(28.dp)
                         )
                     }
                 }
             }
 
             // Member Name
-            Text(
-                text = m.fullName,
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                fontSize = 11.sp,
-                lineHeight = 13.sp
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = m.fullName,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontSize = 11.sp
+                )
 
-            // Bottom Branch toggle or ID
+                // Lineage / Relationship Hint (পিতা বা স্বামী/স্ত্রীর নাম)
+                val relationHint = when {
+                    !m.fatherName.isNullOrBlank() -> if (isBn) "পিতা: ${m.fatherName}" else "Father: ${m.fatherName}"
+                    !m.spouseName.isNullOrBlank() -> if (isBn) "${if (isMale) "স্ত্রী" else "স্বামী"}: ${m.spouseName}" else "Spouse: ${m.spouseName}"
+                    !m.motherName.isNullOrBlank() -> if (isBn) "মাতা: ${m.motherName}" else "Mother: ${m.motherName}"
+                    else -> ""
+                }
+
+                if (relationHint.isNotBlank()) {
+                    Text(
+                        text = relationHint,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 8.sp,
+                        color = MaterialTheme.colorScheme.outline,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // Bottom Branch toggle and ID
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -551,14 +645,14 @@ fun TreeNodeCard(
                 Text(
                     text = m.id,
                     style = MaterialTheme.typography.labelSmall,
-                    fontSize = 8.sp,
+                    fontSize = 7.5.sp,
                     color = MaterialTheme.colorScheme.outline
                 )
 
                 if (node.hasChildren) {
                     Box(
                         modifier = Modifier
-                            .size(20.dp)
+                            .size(18.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.primaryContainer)
                             .clickable { onToggleCollapse() },
@@ -568,7 +662,7 @@ fun TreeNodeCard(
                             imageVector = if (node.isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                             contentDescription = "Toggle branch",
                             tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }

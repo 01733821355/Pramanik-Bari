@@ -195,6 +195,11 @@ class FamilyRepository(
 
             if (customGeneration != null) {
                 updatedSource = updatedSource.copy(generation = customGeneration)
+                if (connectionType == ConnectionType.SET_AS_FATHER || connectionType == ConnectionType.SET_AS_MOTHER) {
+                    updatedTarget = updatedTarget.copy(generation = customGeneration + 1)
+                } else if (connectionType == ConnectionType.SET_AS_SPOUSE || connectionType == ConnectionType.SET_AS_SIBLING) {
+                    updatedTarget = updatedTarget.copy(generation = customGeneration)
+                }
             }
 
             dao.insertOrUpdate(FamilyMemberEntity.fromDomain(updatedSource))

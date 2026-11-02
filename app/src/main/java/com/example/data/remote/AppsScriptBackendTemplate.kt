@@ -8,9 +8,31 @@ object AppsScriptBackendTemplate {
 
     val SCRIPT_CODE: String = """
 /**
- * Pramanik Bari - Digital Family Tree Backend
+ * Pramanik Bari - Digital Family Tree & Events Backend
  * Owner: mdbappyhossain2510@gmail.com
  * Powered by Google Apps Script (Google Sheets & Google Drive)
+ * 
+ * ========================================================
+ * 📌 AUTHORIZATION & DEPLOYMENT INSTRUCTIONS:
+ * 1. Open your Google Sheet -> Extensions -> Apps Script
+ * 2. Delete all existing code in Code.gs and paste this ENTIRE code
+ * 3. At the top toolbar dropdown (next to "Debug"), select function:
+ *       "setupAndAuthorizeDrive"
+ * 4. Click the "Run" button (▶ Run)
+ * 5. Google will show: "Authorization required" -> Click "Review permissions"
+ * 6. Select your Google account (mdbappyhossain2510@gmail.com)
+ * 7. Click "Advanced" (or 'উন্নত') -> Click "Go to Untitled project (unsafe)"
+ * 8. Click "Allow" (অনুমতি দিন)
+ * 9. Look at Execution log: It will say "✅ All permissions authorized successfully!"
+ * 
+ * 10. Now click "Deploy" (ডিপ্লয়) -> "Manage deployments" -> Edit (pencil icon)
+ *     or "New deployment":
+ *     - Select type: "Web app"
+ *     - Description: "Pramanik Bari v1"
+ *     - Execute as: "Me" (mdbappyhossain2510@gmail.com)
+ *     - Who has access: "Anyone" (যেকোনো ব্যক্তি)
+ * 11. Click "Deploy" and copy the Web App URL.
+ * ========================================================
  */
 
 var SHEET_NAME = "Pramanik_Bari_Family_Tree";
@@ -31,8 +53,34 @@ var EVENT_HEADERS = [
   "photoUrls", "photoDriveIds", "createdByName", "updatedAt"
 ];
 
+/**
+ * ⚡ RUN THIS FUNCTION FROM EDITOR TO AUTHORIZE GOOGLE DRIVE & SHEETS
+ */
+function setupAndAuthorizeDrive() {
+  Logger.log("Starting Pramanik Bari authorization & setup...");
+  
+  // 1. Authorize & Initialize Google Sheets
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = getSheet();
+  var eventSheet = getEventsSheet();
+  Logger.log("✅ Google Sheets access verified: " + ss.getName());
+  
+  // 2. Authorize & Initialize Google Drive Folder for Photos
+  var folder = getDriveFolder();
+  Logger.log("✅ Google Drive Folder verified: " + folder.getName() + " (ID: " + folder.getId() + ")");
+  
+  // 3. Test Drive upload & view permission
+  folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  
+  Logger.log("🎉 SUCCESS: All permissions (Google Drive & Sheets) authorized successfully!");
+  Logger.log("Now deploy as Web App with 'Execute as: Me' and 'Who has access: Anyone'.");
+  
+  return "Setup & Authorization Completed Successfully!";
+}
+
 function doGet(e) {
-  var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : "getMembers";
+  if (!e) e = { parameter: {} };
+  var action = (e.parameter && e.parameter.action) ? e.parameter.action : "getMembers";
   
   if (action === "ping") {
     return createJsonResponse({
@@ -50,6 +98,13 @@ function doGet(e) {
 
 function doPost(e) {
   try {
+    if (!e || !e.postData || !e.postData.contents) {
+      return createJsonResponse({
+        status: "error",
+        message: "No POST body received. If testing in editor, run setupAndAuthorizeDrive() instead."
+      });
+    }
+
     var rawData = e.postData.contents;
     var data = JSON.parse(rawData);
     var action = data.action || "";
@@ -87,7 +142,9 @@ function getSheet() {
 function getDriveFolder() {
   var folders = DriveApp.getFoldersByName(FOLDER_NAME);
   if (folders.hasNext()) {
-    return folders.next();
+    var folder = folders.next();
+    folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return folder;
   }
   var newFolder = DriveApp.createFolder(FOLDER_NAME);
   newFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
@@ -225,7 +282,7 @@ function uploadPhoto(data) {
   var fileId = file.getId();
   var directUrl = "https://lh3.googleusercontent.com/d/" + fileId;
   
-  // Also update photo in sheet if member exists
+  // Update photo in sheet if member exists
   var sheet = getSheet();
   var sheetData = sheet.getDataRange().getValues();
   for (var i = 1; i < sheetData.length; i++) {

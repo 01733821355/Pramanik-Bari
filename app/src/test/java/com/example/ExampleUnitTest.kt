@@ -68,4 +68,27 @@ class ExampleUnitTest {
         assertTrue(deceasedAge!!.first.contains("প্রয়াত"))
         assertEquals("Passed away at age 70", deceasedAge.second)
     }
+
+    @Test
+    fun testPurushFormattingAndBengaliParsing() {
+        assertEquals("১ম পুরুষ", TreeLayoutCalculator.toPurushLabel(1, true))
+        assertEquals("২য় পুরুষ", TreeLayoutCalculator.toPurushLabel(2, true))
+        assertEquals("৩য় পুরুষ", TreeLayoutCalculator.toPurushLabel(3, true))
+        assertEquals("Generation 1", TreeLayoutCalculator.toPurushLabel(1, false))
+
+        assertEquals(1, TreeLayoutCalculator.parseBengaliOrLatinInt("১"))
+        assertEquals(2, TreeLayoutCalculator.parseBengaliOrLatinInt("২য় পুরুষ"))
+        assertEquals(3, TreeLayoutCalculator.parseBengaliOrLatinInt("3"))
+        assertEquals(1, TreeLayoutCalculator.parseBengaliOrLatinInt(""))
+    }
+
+    @Test
+    fun testCycleImmunityDoesNotCrash() {
+        // Person A's father is B, and Person B's father is A (circular relationship)
+        val m1 = FamilyMember(id = "A", fullName = "Person A", gender = Gender.MALE, fatherId = "B")
+        val m2 = FamilyMember(id = "B", fullName = "Person B", gender = Gender.MALE, fatherId = "A")
+        val layout = TreeLayoutCalculator.calculateLayout(listOf(m1, m2), selectedMemberId = "A")
+        assertNotNull(layout)
+        assertEquals(2, layout.nodes.size)
+    }
 }

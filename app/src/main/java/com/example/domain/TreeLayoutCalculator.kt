@@ -2,18 +2,21 @@ package com.example.domain
 
 import com.example.data.model.FamilyMember
 import com.example.data.model.Gender
+import java.util.LinkedList
+import java.util.Queue
 
 data class TreeNode(
     val member: FamilyMember,
     val x: Float,
     val y: Float,
     val width: Float = 170f,
-    val height: Float = 160f,
+    val height: Float = 165f,
     val isExpanded: Boolean = true,
     val hasChildren: Boolean = false,
     val isHighlighted: Boolean = false,
     val isAncestorOfSelected: Boolean = false,
-    val isDescendantOfSelected: Boolean = false
+    val isDescendantOfSelected: Boolean = false,
+    val purushNumber: Int = 1
 )
 
 data class CoupleConnection(
@@ -36,21 +39,64 @@ data class BranchConnection(
     val isHighlighted: Boolean = false
 )
 
+data class GenerationHeader(
+    val generation: Int,
+    val titleBn: String,
+    val titleEn: String,
+    val y: Float,
+    val count: Int
+)
+
 data class TreeLayoutResult(
     val nodes: List<TreeNode>,
     val coupleLines: List<CoupleConnection>,
     val branchLines: List<BranchConnection>,
+    val generationHeaders: List<GenerationHeader>,
     val totalWidth: Float,
     val totalHeight: Float,
     val generationCounts: Map<Int, Int>
 )
 
 object TreeLayoutCalculator {
-    const val NODE_WIDTH = 170f
+    const val NODE_WIDTH = 175f
     const val NODE_HEIGHT = 165f
-    const val HORIZONTAL_SPACING = 55f
-    const val VERTICAL_LEVEL_SPACING = 240f
-    const val COUPLE_SPACING = 25f
+    const val HORIZONTAL_SPACING = 50f
+    const val VERTICAL_LEVEL_SPACING = 270f
+    const val COUPLE_SPACING = 28f
+
+    fun toPurushLabel(gen: Int, isBn: Boolean): String {
+        if (!isBn) return "Generation $gen"
+        return when (gen) {
+            1 -> "১ম পুরুষ"
+            2 -> "২য় পুরুষ"
+            3 -> "৩য় পুরুষ"
+            4 -> "৪র্থ পুরুষ"
+            5 -> "৫ম পুরুষ"
+            6 -> "৬ষ্ঠ পুরুষ"
+            7 -> "৭ম পুরুষ"
+            8 -> "৮ম পুরুষ"
+            9 -> "৯ম পুরুষ"
+            10 -> "১০ম পুরুষ"
+            else -> "${AgeCalculator.toBengaliDigits(gen)}তম পুরুষ"
+        }
+    }
+
+    fun parseBengaliOrLatinInt(input: String?): Int {
+        if (input.isNullOrBlank()) return 1
+        val clean = input.trim()
+            .replace("১", "1")
+            .replace("২", "2")
+            .replace("৩", "3")
+            .replace("৪", "4")
+            .replace("৫", "5")
+            .replace("৬", "6")
+            .replace("৭", "7")
+            .replace("৮", "8")
+            .replace("৯", "9")
+            .replace("০", "0")
+            .filter { it.isDigit() }
+        return clean.toIntOrNull() ?: 1
+    }
 
     fun calculateLayout(
         allMembers: List<FamilyMember>,
@@ -58,83 +104,169 @@ object TreeLayoutCalculator {
         selectedMemberId: String? = null
     ): TreeLayoutResult {
         if (allMembers.isEmpty()) {
-            return TreeLayoutResult(emptyList(), emptyList(), emptyList(), 800f, 600f, emptyMap())
+            return TreeLayoutResult(emptyList(), emptyList(), emptyList(), emptyList(), 800f, 600f, emptyMap())
         }
 
         val memberMap = allMembers.associateBy { it.id }
 
-        // Determine generations (1 = oldest ancestors, 2, 3...)
+        // 1. Cycle-safe generation calculation (BFS from roots)
         val computedGenerations = mutableMapOf<String, Int>()
-
-        fun getGen(member: FamilyMember, visited: MutableSet<String> = mutableSetOf()): Int {
-            if (visited.contains(member.id)) return 1
-            visited.add(member.id)
-            if (member.fatherId != null && memberMap.containsKey(member.fatherId)) {
-                return (computedGenerations[member.fatherId] ?: getGen(memberMap[member.fatherId]!!, visited)) + 1
-            }
-            if (member.motherId != null && memberMap.containsKey(member.motherId)) {
-                return (computedGenerations[member.motherId] ?: getGen(memberMap[member.motherId]!!, visited)) + 1
-            }
-            return if (member.generation > 0) member.generation else 1
+        val childrenOf = mutableMapOf<String, MutableSet<String>>()
+        for (m in allMembers) {
+            childrenOf[m.id] = mutableSetOf()
         }
 
         for (m in allMembers) {
-            computedGenerations[m.id] = getGen(m)
+            m.fatherId?.let { fId ->
+                if (memberMap.containsKey(fId) && fId != m.id) {
+                    childrenOf[fId]?.add(m.id)
+                }
+            }
+            m.motherId?.let { mId ->
+                if (memberMap.containsKey(mId) && mId != m.id) {
+                    childrenOf[mId]?.add(m.id)
+                }
+            }
+            for (cId in m.childrenIds) {
+                if (memberMap.containsKey(cId) && cId != m.id) {
+                    childrenOf[m.id]?.add(cId)
+                }
+            }
         }
 
-        // Adjust spouse generations to match
+        // Roots are members whose parents are not in the memberMap
+        val roots = allMembers.filter { m ->
+            val hasFather = m.fatherId != null && memberMap.containsKey(m.fatherId)
+            val hasMother = m.motherId != null && memberMap.containsKey(m.motherId)
+            !hasFather && !hasMother
+        }
+
+        val visitedGen = mutableSetOf<String>()
+        val queue: Queue<Pair<String, Int>> = LinkedList()
+
+        for (r in roots) {
+            val rootGen = if (r.generation > 0) r.generation else 1
+            computedGenerations[r.id] = rootGen
+            visitedGen.add(r.id)
+            queue.add(Pair(r.id, rootGen))
+        }
+
+        while (queue.isNotEmpty()) {
+            val (currentId, currentGen) = queue.poll()!!
+            val currentMember = memberMap[currentId] ?: continue
+
+            // Spouses share same generation
+            currentMember.spouseId?.let { sId ->
+                if (memberMap.containsKey(sId) && !visitedGen.contains(sId)) {
+                    computedGenerations[sId] = currentGen
+                    visitedGen.add(sId)
+                    for (cId in (childrenOf[sId] ?: emptySet())) {
+                        if (!visitedGen.contains(cId)) {
+                            computedGenerations[cId] = currentGen + 1
+                            visitedGen.add(cId)
+                            queue.add(Pair(cId, currentGen + 1))
+                        }
+                    }
+                }
+            }
+
+            for (childId in (childrenOf[currentId] ?: emptySet())) {
+                if (!visitedGen.contains(childId)) {
+                    computedGenerations[childId] = currentGen + 1
+                    visitedGen.add(childId)
+                    queue.add(Pair(childId, currentGen + 1))
+                }
+            }
+        }
+
+        // Any unvisited nodes (islands/disconnected)
+        for (m in allMembers) {
+            if (!computedGenerations.containsKey(m.id)) {
+                computedGenerations[m.id] = if (m.generation > 0) m.generation else 1
+            }
+        }
+
+        // Final spouse sync (ensure spouses are placed on same generation level)
         for (m in allMembers) {
             m.spouseId?.let { sId ->
-                val g1 = computedGenerations[m.id] ?: 1
-                val g2 = computedGenerations[sId] ?: 1
-                val commonGen = minOf(g1, g2)
-                computedGenerations[m.id] = commonGen
-                computedGenerations[sId] = commonGen
+                if (memberMap.containsKey(sId)) {
+                    val g1 = computedGenerations[m.id] ?: 1
+                    val g2 = computedGenerations[sId] ?: 1
+                    val minG = minOf(g1, g2)
+                    computedGenerations[m.id] = minG
+                    computedGenerations[sId] = minG
+                }
             }
         }
 
-        // Check ancestry & descendants for selected member highlighting
+        // 2. Cycle-safe ancestor & descendant discovery
         val ancestors = mutableSetOf<String>()
         val descendants = mutableSetOf<String>()
 
         if (selectedMemberId != null && memberMap.containsKey(selectedMemberId)) {
-            // Find ancestors
-            fun traceAncestors(id: String) {
-                val m = memberMap[id] ?: return
-                m.fatherId?.let {
-                    ancestors.add(it)
-                    traceAncestors(it)
+            val ancQueue: Queue<String> = LinkedList()
+            ancQueue.add(selectedMemberId)
+            val ancVisited = mutableSetOf(selectedMemberId)
+            while (ancQueue.isNotEmpty()) {
+                val currId = ancQueue.poll()!!
+                val m = memberMap[currId] ?: continue
+                m.fatherId?.let { fId ->
+                    if (memberMap.containsKey(fId) && ancVisited.add(fId)) {
+                        ancestors.add(fId)
+                        ancQueue.add(fId)
+                    }
                 }
-                m.motherId?.let {
-                    ancestors.add(it)
-                    traceAncestors(it)
+                m.motherId?.let { mId ->
+                    if (memberMap.containsKey(mId) && ancVisited.add(mId)) {
+                        ancestors.add(mId)
+                        ancQueue.add(mId)
+                    }
                 }
             }
-            traceAncestors(selectedMemberId)
 
-            // Find descendants
-            fun traceDescendants(id: String) {
-                val m = memberMap[id] ?: return
+            val descQueue: Queue<String> = LinkedList()
+            descQueue.add(selectedMemberId)
+            val descVisited = mutableSetOf(selectedMemberId)
+            while (descQueue.isNotEmpty()) {
+                val currId = descQueue.poll()!!
+                val m = memberMap[currId] ?: continue
                 for (cId in m.childrenIds) {
-                    descendants.add(cId)
-                    traceDescendants(cId)
+                    if (memberMap.containsKey(cId) && descVisited.add(cId)) {
+                        descendants.add(cId)
+                        descQueue.add(cId)
+                    }
+                }
+                for (other in allMembers) {
+                    if ((other.fatherId == currId || other.motherId == currId) && descVisited.add(other.id)) {
+                        descendants.add(other.id)
+                        descQueue.add(other.id)
+                    }
                 }
             }
-            traceDescendants(selectedMemberId)
         }
 
-        // Filter out members who are hidden because their parent branch is collapsed
+        // 3. Cycle-safe collapse filter
         val hiddenMembers = mutableSetOf<String>()
-        fun markHiddenChildren(id: String) {
-            val m = memberMap[id] ?: return
-            for (cId in m.childrenIds) {
-                hiddenMembers.add(cId)
-                markHiddenChildren(cId)
-            }
-        }
-
         for (collapsedId in collapsedMemberIds) {
-            markHiddenChildren(collapsedId)
+            val collapseQueue: Queue<String> = LinkedList()
+            collapseQueue.add(collapsedId)
+            val collapseVisited = mutableSetOf(collapsedId)
+            while (collapseQueue.isNotEmpty()) {
+                val currId = collapseQueue.poll()!!
+                val m = memberMap[currId] ?: continue
+                for (cId in m.childrenIds) {
+                    if (memberMap.containsKey(cId) && collapseVisited.add(cId)) {
+                        hiddenMembers.add(cId)
+                        collapseQueue.add(cId)
+                    }
+                }
+                for (other in allMembers) {
+                    if ((other.fatherId == currId || other.motherId == currId) && collapseVisited.add(other.id)) {
+                        hiddenMembers.add(other.id)
+                        collapseQueue.add(other.id)
+                    }
+                }
+            }
         }
 
         val visibleMembers = allMembers.filter { !hiddenMembers.contains(it.id) }
@@ -144,24 +276,29 @@ object TreeLayoutCalculator {
         val nodes = mutableListOf<TreeNode>()
         val coupleLines = mutableListOf<CoupleConnection>()
         val branchLines = mutableListOf<BranchConnection>()
+        val generationHeaders = mutableListOf<GenerationHeader>()
 
         var maxTreeWidth = 800f
-        var currentY = 80f
-
-        // Keep track of member center coordinates
+        var currentY = 100f
         val nodeCenters = mutableMapOf<String, Pair<Float, Float>>()
 
         for ((gen, membersInGen) in byGeneration) {
-            // Group couples side-by-side
+            // Group couples side-by-side (Husband on left, Wife on right)
             val placedInRow = mutableSetOf<String>()
             val rowUnits = mutableListOf<List<FamilyMember>>()
 
-            for (m in membersInGen) {
+            // Sort members so siblings belonging to the same parents stay clustered together
+            val sortedMembersInGen = membersInGen.sortedWith(
+                compareBy<FamilyMember> { it.fatherId ?: "" }
+                    .thenBy { it.motherId ?: "" }
+                    .thenBy { it.fullName }
+            )
+
+            for (m in sortedMembersInGen) {
                 if (placedInRow.contains(m.id)) continue
                 val sId = m.spouseId
                 if (sId != null && membersInGen.any { it.id == sId } && !placedInRow.contains(sId)) {
                     val spouse = membersInGen.first { it.id == sId }
-                    // Place Male first, then Female
                     val pair = if (m.gender == Gender.MALE) listOf(m, spouse) else listOf(spouse, m)
                     rowUnits.add(pair)
                     placedInRow.add(m.id)
@@ -186,7 +323,20 @@ object TreeLayoutCalculator {
                 maxTreeWidth = rowWidth
             }
 
-            var startX = 80f
+            // Add Generation Header
+            val purushBn = toPurushLabel(gen, isBn = true)
+            val purushEn = toPurushLabel(gen, isBn = false)
+            generationHeaders.add(
+                GenerationHeader(
+                    generation = gen,
+                    titleBn = purushBn,
+                    titleEn = purushEn,
+                    y = currentY - 55f,
+                    count = membersInGen.size
+                )
+            )
+
+            var startX = 120f
             for (unit in rowUnits) {
                 if (unit.size == 2) {
                     val m1 = unit[0]
@@ -207,7 +357,7 @@ object TreeLayoutCalculator {
                     val midX = (center1X + center2X) / 2
                     val midY = center1Y
 
-                    val hasKids = m1.childrenIds.isNotEmpty() || m2.childrenIds.isNotEmpty()
+                    val hasKids = (childrenOf[m1.id]?.isNotEmpty() == true) || (childrenOf[m2.id]?.isNotEmpty() == true)
                     val isCollapsed = collapsedMemberIds.contains(m1.id) || collapsedMemberIds.contains(m2.id)
 
                     val isCoupleHighlighted = (m1.id == selectedMemberId || m2.id == selectedMemberId) ||
@@ -229,27 +379,29 @@ object TreeLayoutCalculator {
 
                     nodes.add(
                         TreeNode(
-                            member = m1,
+                            member = m1.copy(generation = gen),
                             x = x1,
                             y = y1,
                             isExpanded = !isCollapsed,
                             hasChildren = hasKids,
                             isHighlighted = m1.id == selectedMemberId,
                             isAncestorOfSelected = ancestors.contains(m1.id),
-                            isDescendantOfSelected = descendants.contains(m1.id)
+                            isDescendantOfSelected = descendants.contains(m1.id),
+                            purushNumber = gen
                         )
                     )
 
                     nodes.add(
                         TreeNode(
-                            member = m2,
+                            member = m2.copy(generation = gen),
                             x = x2,
                             y = y2,
                             isExpanded = !isCollapsed,
                             hasChildren = hasKids,
                             isHighlighted = m2.id == selectedMemberId,
                             isAncestorOfSelected = ancestors.contains(m2.id),
-                            isDescendantOfSelected = descendants.contains(m2.id)
+                            isDescendantOfSelected = descendants.contains(m2.id),
+                            purushNumber = gen
                         )
                     )
 
@@ -262,19 +414,20 @@ object TreeLayoutCalculator {
                     val centerY = y + NODE_HEIGHT / 2
                     nodeCenters[m.id] = Pair(centerX, centerY)
 
-                    val hasKids = m.childrenIds.isNotEmpty()
+                    val hasKids = childrenOf[m.id]?.isNotEmpty() == true
                     val isCollapsed = collapsedMemberIds.contains(m.id)
 
                     nodes.add(
                         TreeNode(
-                            member = m,
+                            member = m.copy(generation = gen),
                             x = x,
                             y = y,
                             isExpanded = !isCollapsed,
                             hasChildren = hasKids,
                             isHighlighted = m.id == selectedMemberId,
                             isAncestorOfSelected = ancestors.contains(m.id),
-                            isDescendantOfSelected = descendants.contains(m.id)
+                            isDescendantOfSelected = descendants.contains(m.id),
+                            purushNumber = gen
                         )
                     )
 
@@ -285,7 +438,7 @@ object TreeLayoutCalculator {
             currentY += VERTICAL_LEVEL_SPACING
         }
 
-        // Generate branch connections (parents down to children)
+        // 4. Generate Branch Lines (Connecting parents down to children)
         for (node in nodes) {
             val child = node.member
             val fatherId = child.fatherId
@@ -294,6 +447,7 @@ object TreeLayoutCalculator {
             var parentMidX: Float? = null
             var parentMidY: Float? = null
 
+            // First check if both father & mother are placed as a couple
             if (fatherId != null && motherId != null) {
                 val couple = coupleLines.find {
                     (it.personAId == fatherId && it.personBId == motherId) ||
@@ -305,6 +459,7 @@ object TreeLayoutCalculator {
                 }
             }
 
+            // If not found as a couple, use single parent or mid-point
             if (parentMidX == null) {
                 val fCenter = fatherId?.let { nodeCenters[it] }
                 val mCenter = motherId?.let { nodeCenters[it] }
@@ -349,8 +504,9 @@ object TreeLayoutCalculator {
             nodes = nodes,
             coupleLines = coupleLines,
             branchLines = branchLines,
-            totalWidth = maxOf(maxTreeWidth + 200f, 1200f),
-            totalHeight = maxOf(currentY + 150f, 900f),
+            generationHeaders = generationHeaders,
+            totalWidth = maxOf(maxTreeWidth + 260f, 1200f),
+            totalHeight = maxOf(currentY + 180f, 950f),
             generationCounts = visibleMembers.groupBy { computedGenerations[it.id] ?: 1 }.mapValues { it.value.size }
         )
     }
